@@ -1,0 +1,72 @@
+name: main
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - ".github/**"
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST_DEV }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN_DEV }}
+
+      # The workspace repo path where Databricks Repo will live
+      REPOSITORY_PATH: /Workspace/Users/rollux2013@gmail.com/bronze-ingestion-pipeline
+
+      # Your GitHub repo HTTPS URL (recommended to store as a secret if private)
+      GIT_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Extract branch name
+        id: extract_branch
+        shell: bash
+        run: |
+          # Correct ref prefix is refs/heads/
+          echo "branch=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
+
+      - name: Debug Databricks auth (safe)
+        shell: bash
+        run: |
+          databricks --version
+          databricks auth env
+          databricks current-user me
+
+      - name: Deploy or Update Repo
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Target Databricks Repo Path: ${REPOSITORY_PATH}"
+          echo "Git Repo URL: ${GIT_REPO_URL}"
+          echo "Branch: ${{ steps.extract_branch.outputs.branch }}"
+
+          # 1) Check if the repo exists
+          if databricks repos get --path "${REPOSITORY_PATH}" > /dev/null 2>&1; then
+            echo "Repo exists. Switching/updating branch..."
+            databricks repos update \
+              --path "${REPOSITORY_PATH}" \
+              --branch "${{ steps.extract_branch.outputs.branch }}"
+          else
+            echo "Repo not found. Creating repo..."
+            databricks repos create \
+              --url "${GIT_REPO_URL}" \
+              --provider gitHub \
+              --path "${REPOSITORY_PATH}"
+            echo "Repo created. Setting branch..."
+            databricks repos update \
+              --path "${REPOSITORY_PATH}" \
+              --branch "${{ steps.extract_branch.outputs.branch }}"
+          fi
