@@ -1,0 +1,45 @@
+name: main
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - ".github/**"
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST_DEV }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN_DEV }}
+
+      # Databricks Repo workspace path
+      REPO_PATH: /Workspace/Users/rollux2013@gmail.com/bronze-ingestion-pipeline
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Optional: keep only if you run python tests/tools
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Setup Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Extract branch name
+        id: extract_branch_dev
+        shell: bash
+        run: |
+          echo "branch=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Repo
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Updating Databricks repo at: $REPO_PATH"
+          databricks repos update "$REPO_PATH" --branch "${{ steps.extract_branch_dev.outputs.branch }}"
